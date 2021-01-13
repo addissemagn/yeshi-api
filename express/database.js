@@ -52,52 +52,75 @@ class RecipeManager {
   // Append recipe to cookbook's recipe list
   async addRecipeToCookbook(id, recipe) {
     try {
-      const res = await this.cookbooksCollection.update(
+      const cookbook = await this.cookbooksCollection.findOne({ cookbookId: id });
+      const nextId = parseInt(cookbook.recipes[cookbook.recipes.length - 1].id) + 1;
+
+      const res = await this.cookbooksCollection.findOneAndUpdate(
         { cookbookId: id },
         {
             $push: {
-                recipies: recipe
+                recipes: {
+                  ...recipe,
+                  id: `${nextId}`
+                }
             }
-        }
+        },
+        { returnOriginal: false }
       );
-      return res;
+      return res.value;
     } catch (err) { console.log(err); }
   }
 
   // Currently replaces the whole list with a new one
   async updateGroceryList(username, list) {
     try {
-      const res = await this.usersCollection.updateOne(
-        { username: username },
-        { $set: { "groceryList": list}}
+      const whereObj = { username: username };
+      const updateObj = { $set: { "groceryList": list }};
+      const res = await this.usersCollection.findOneAndUpdate(
+        whereObj,
+        updateObj,
+        { returnOriginal: false }
       );
-      return res;
+
+      return res.value;
     } catch (err) { console.log(err); }
   }
 
   // Currently replaces the whole list with a new one
   async updateInventoryList(username, list) {
     try {
-      const res = await this.usersCollection.updateOne(
-        { username: username },
-        { $set: { "inventory": list}}
+      const whereObj = { username: username };
+      const updateObj = { $set: { "inventory": list}}
+      const res = await this.usersCollection.findOneAndUpdate(
+        whereObj,
+        updateObj,
+        { returnOriginal: false }
       );
-      return res;
+
+      return res.value;
     } catch (err) { console.log(err); }
   }
 
   // Remove recipie in cookbook by id
-  async deleteCookbookRecipe(cookbookId, recipeId) {
+  // FIXME: Change this from using recipeIndex to recipeId
+  async deleteCookbookRecipe(cookbookId, recipeIndex) {
     try {
       const query = {}
-      query[`recipies.${recipeId}`] = 1;
+      query[`recipes.${recipeIndex}`] = 1;
 
       // Place null value at recipe index
-      await this.cookbooksCollection.updateOne({}, {$unset : query});
+      await this.cookbooksCollection.updateOne(
+        { cookbookId: cookbookId },
+        { $unset: query }
+      );
 
       // Remove null value from recipe array
-      const res = await this.cookbooksCollection.updateOne({}, {$pull : {"recipies" : null}});
-      return res;
+      const res = await this.cookbooksCollection.findOneAndUpdate(
+        { cookbookId: cookbookId },
+        { $pull: { recipes: null } },
+        { returnOriginal: false }
+      );
+      return res.value;
     } catch (err) { console.log(err); }
   }
 }

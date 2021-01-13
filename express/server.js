@@ -121,12 +121,13 @@ router.post('/cookbook/:id', auth, async (req, res) => {
 router.delete('/cookbook/:id', auth, async (req, res) => {
   recipeManagerDb = await getDb();
   const cookbookId = req.params.id;
-  const { recipeId } = req.body;
+  const { recipeIndex } = req.body;
 
-  const result = await recipeManagerDb.deleteCookbookRecipe(cookbookId, recipeId);
+  const result = await recipeManagerDb.deleteCookbookRecipe(cookbookId, recipeIndex);
   res.send(result)
 })
 
+// Returns the modified user
 router.patch('/list/groceries', auth, async (req, res) => {
   recipeManagerDb = await getDb();
   const { username } = req.user;
@@ -136,6 +137,7 @@ router.patch('/list/groceries', auth, async (req, res) => {
   res.send(result)
 })
 
+// Returns the modified user
 router.patch('/list/inventory', auth, async (req, res) => {
   recipeManagerDb = await getDb();
   const { username } = req.user;
