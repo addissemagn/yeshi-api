@@ -53,7 +53,10 @@ class RecipeManager {
   async addRecipeToCookbook(id, recipe) {
     try {
       const cookbook = await this.cookbooksCollection.findOne({ cookbookId: id });
-      const nextId = parseInt(cookbook.recipes[cookbook.recipes.length - 1].id) + 1;
+      const nextId =
+        (cookbook.recipes.length > 0 &&
+          parseInt(cookbook.recipes[cookbook.recipes.length - 1].id) + 1) ||
+        "1";
 
       const res = await this.cookbooksCollection.findOneAndUpdate(
         { cookbookId: id },

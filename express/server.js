@@ -5,6 +5,7 @@ require("dotenv").config();
 const express = require('express');
 const serverless = require('serverless-http');
 const bodyParser = require('body-parser');
+const fileUpload = require('express-fileupload');
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
@@ -14,6 +15,8 @@ const {
   RecipeManager
 } = require("./database");
 const auth = require("../middleware/auth");
+const { getTextFromImage } = require('./gcloud');
+const { textToRecipeObject } = require('../lib');
 
 const app = express();
 const router = express.Router();
@@ -59,8 +62,6 @@ router.post('/login', async (req, res) => {
       },
     };
 
-    console.log(`Logged in user: ${username}`)
-
     jwt.sign(
       payload,
       process.env.PRIVATE_KEY,
@@ -79,16 +80,6 @@ router.post('/login', async (req, res) => {
     res.status(500).json({
       message: "Server Error"
     });
-  }
-})
-
-router.get('/admin', auth, async (req, res) => {
-  usersDb = await getDb();
-  try {
-    const admin = await usersDb.getAdmin(req.user.username);
-    res.json({ username: admin.username });
-  } catch (e) {
-    res.send({ message: "Error fetching admin" });
   }
 })
 
@@ -115,6 +106,14 @@ router.post('/cookbook/:id', auth, async (req, res) => {
 
   const result = await recipeManagerDb.addRecipeToCookbook(id, recipe);
   res.send(result)
+})
+
+// Add recipe with image using GCloud Vision for text recognition
+router.post('/ocr/recipe', auth, async (req, res) => {
+  const lines = await getTextFromImage(req.files.image.data);
+  const recipe = textToRecipeObject(lines);
+
+  res.send(recipe)
 })
 
 // Delete recipie in cookbook by it's ID
@@ -156,6 +155,7 @@ var corsOptions = {
 
 app.use(cors(corsOptions));
 app.use(bodyParser.json());
+app.use(fileUpload());
 app.use(express.static('public'))
 app.use('/public', express.static('public'))
 app.use('/.netlify/functions/server', router);  // path must route to lambda

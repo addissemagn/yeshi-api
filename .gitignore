@@ -39,3 +39,4 @@ jspm_packages
 functions
 
 .env
+google-cloud-key.json
