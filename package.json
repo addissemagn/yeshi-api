@@ -1,0 +1,44 @@
+{
+  "name": "cannonball-backend",
+  "version": "0.0.1",
+  "description": "Cannonball 2T1",
+  "main": "functions/server.js",
+  "scripts": {
+    "build": "netlify-lambda build express",
+    "start": "nodemon server-local.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/addissemagn/cannonball-express-backend.git"
+  },
+  "keywords": [
+    "netlify",
+    "express.js"
+  ],
+  "author": "neverendingqs",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/neverendingqs/netlify-express/issues"
+  },
+  "homepage": "https://github.com/neverendingqs/netlify-express#readme",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^8.2.0",
+    "fs": "^0.0.1-security",
+    "handlebars": "^4.7.6",
+    "jsonwebtoken": "^8.5.1",
+    "mongodb": "^3.6.3",
+    "nodemailer": "^6.4.17",
+    "path": "^0.12.7",
+    "request": "^2.88.2",
+    "stripe": "^8.129.0"
+  },
+  "devDependencies": {
+    "body-parser": "^1.19.0",
+    "express": "^4.17.1",
+    "netlify-lambda": "^1.6.3",
+    "nodemon": "^1.19.2",
+    "serverless-http": "^2.3.0"
+  }
+}
