@@ -126,6 +126,24 @@ class RecipeManager {
       return res.value;
     } catch (err) { console.log(err); }
   }
+
+  // Append image to the images field of the specified recipe, return modified cookbook
+  async addImageToRecipe(cookbookId, recipeIndex, image) {
+    try {
+      const query = {}
+      query[`recipes.${recipeIndex}.images`] = image;
+
+      const whereObj = { cookbookId: cookbookId };
+      const updateObj = { $push: query }
+      const res = await this.cookbooksCollection.findOneAndUpdate(
+        whereObj,
+        updateObj,
+        { returnOriginal: false }
+      );
+
+      return res.value;
+    } catch (err) { console.log(err); }
+  }
 }
 
 module.exports = {

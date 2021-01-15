@@ -2,164 +2,128 @@
 
 require("dotenv").config();
 
-const express = require('express');
-const serverless = require('serverless-http');
-const bodyParser = require('body-parser');
-const fileUpload = require('express-fileupload');
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const cors = require("cors");
+const express = require("express"),
+  serverless = require("serverless-http"),
+  bodyParser = require("body-parser"),
+  fileUpload = require("express-fileupload"),
+  cors = require("cors"),
+  aws = require("aws-sdk");
 
-const {
-  connectDatabase,
-  RecipeManager
-} = require("./database");
-const auth = require("../middleware/auth");
-const { getTextFromImage } = require('./gcloud');
-const { textToRecipeObject } = require('../lib');
+const auth = require("../middleware/auth"),
+  user = require("../controller/user"),
+  gcloud = require("../controller/gcloud"),
+  cookbook = require("../controller/cookbook"),
+  { connectDatabase, RecipeManager} = require ("./database");
 
-const app = express();
-const router = express.Router();
+const app = express(),
+  router = express.Router();
 
+// Configurations
+aws.config.update({
+  accessKeyId: process.env.AWS_ID,
+  secretAccessKey: process.env.AWS_SECRET,
+  region: "us-east-1",
+});
+
+app.use(cors({
+  origin: process.env.FRONTEND_URL,
+  optionsSuccessStatus: 200,
+}));
+app.use(bodyParser.json());
+app.use(fileUpload());
+app.use(express.static('public'))
+app.use('/public', express.static('public'))
+app.use('/', router);
+// Must route to Netlify Lambda
+app.use('/.netlify/functions/server', router);
+
+// Initialize/retrieve db wrapper class
 let recipeManagerDb;
-
 const getDb = async () => {
   if (!recipeManagerDb) {
     const { usersCollection, cookbooksCollection } = await connectDatabase();
     recipeManagerDb = new RecipeManager(usersCollection, cookbooksCollection);
   }
-
   return recipeManagerDb;
 }
 
-router.get('/', (req, res) => {
-  res.send('API is working!');
-})
+router.get('/', (req, res) => res.send('API is working!'));
 
-router.post('/login', async (req, res) => {
-  recipeManagerDb = await getDb();
-  const { username, password } = req.body;
+// TODO: Add sign up endpoint
+router.post('/login', async (req, res) => user.login(req, res, await getDb()));
+
+// Get user by token
+router.get('/user', auth, async (req, res) => user.get(req, res, await getDb()));
+
+// Update grocery list for user, returns the modified user
+router.patch('/list/groceries', auth, async (req, res) => user.updateGroceryList(req, res, await getDb()));
+
+// Update inventory list for user, returns the modified user
+router.patch('/list/inventory', auth, async (req, res) => user.updateInventory(req, res, await getDb()));
+
+// Get cookbook by it's ID
+router.get('/cookbook/:id', auth, async (req, res) => cookbook.getById(req, res, await getDb()));
+
+// Add recipe to cookbook, returns modified cookbook
+router.post('/cookbook/:id', auth, async (req, res) => cookbook.addRecipe(req, res, await getDb()));
+
+// Delete recipe in cookbook by its INDEX in the list, returns modified cookbook
+// TODO: Change to delete by ID
+router.delete('/cookbook/:id', auth, async (req, res) => cookbook.deleteRecipeByIndex(req, res, await getDb()));
+
+// Receives image and returns extracted recipe model using GCloud Vision for text recognition
+router.post('/ocr/recipe', auth, gcloud.extractRecipe);
+
+// Uploads image to S3 bucket, adds image URL to MongoDB document of the cookbook's specified recipe, returns modified cookook
+// TODO: Refactor to controller
+// TODO: Allow different captions for each photo in bulk upload
+router.post("/cookbook/:cookbookId/upload", auth, async (req, res) => {
+  await getDb();
+
+  const { cookbookId } = req.params;
+  const { recipeIndex, caption } = req.body;
 
   try {
-    const user = await recipeManagerDb.getUser(username);
+    // TODO: Optimize bulk uploads, s3 upload might be limited but try to do only 1 write to MongoDB
+    let updatedCookbook;
 
-    if (!user) {
-      return res.status(400).json({
-        message: `User ${username} does not exist`,
-      });
+    for (const key of Object.keys(req.files)) {
+      const buffer = req.files[key].data;
+      var id = `img-${Date.now()}-${req.files[key].name}`;
+
+      const result = await new aws.S3()
+        .upload({
+          Bucket: process.env.AWS_BUCKET_NAME,
+          Key: id,
+          Body: buffer,
+          ACL: "public-read",
+        })
+        .promise();
+
+      const image = {
+        url: result.Location,
+        caption,
+      };
+
+      updatedCookbook = await recipeManagerDb.addImageToRecipe(
+        cookbookId,
+        recipeIndex,
+        image
+      );
     }
+    console.log(updatedCookbook);
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({
-        message: "Incorrect password",
-      });
-    }
-
-    const payload = {
-      user: {
-        username: user.username,
-      },
-    };
-
-    jwt.sign(
-      payload,
-      process.env.PRIVATE_KEY,
-      {
-        expiresIn: 3600,
-      },
-      (err, token) => {
-        if (err) throw err;
-        res.status(200).json({
-          token,
-        });
-      }
-    );
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({
-      message: "Server Error"
+    res.send({
+      message: "File uploaded",
+      cookbook: updatedCookbook,
+    });
+  } catch (err) {
+    console.error(`ERROR: ${err.message}`);
+    res.status(500).send({
+      message: err.message,
     });
   }
-})
-
-router.get('/user', auth, async (req, res) => {
-  recipeManagerDb = await getDb();
-  const { username } = req.user;
-  const result = await recipeManagerDb.getUser(username);
-  // TODO: Re-eval. It's a hash value but unnecessary to return
-  delete result.password;
-  res.send(result)
-})
-
-router.get('/cookbook/:id', auth, async (req, res) => {
-  recipeManagerDb = await getDb();
-  const id = req.params.id;
-  const result = await recipeManagerDb.getCookbook(id);
-  res.send(result);
-})
-
-router.post('/cookbook/:id', auth, async (req, res) => {
-  recipeManagerDb = await getDb();
-  const id = req.params.id;
-  const { recipe } = req.body;
-
-  const result = await recipeManagerDb.addRecipeToCookbook(id, recipe);
-  res.send(result)
-})
-
-// Add recipe with image using GCloud Vision for text recognition
-router.post('/ocr/recipe', auth, async (req, res) => {
-  const lines = await getTextFromImage(req.files.image.data);
-  const recipe = textToRecipeObject(lines);
-
-  res.send(recipe)
-})
-
-// Delete recipie in cookbook by it's ID
-router.delete('/cookbook/:id', auth, async (req, res) => {
-  recipeManagerDb = await getDb();
-  const cookbookId = req.params.id;
-  const { recipeIndex } = req.body;
-
-  const result = await recipeManagerDb.deleteCookbookRecipe(cookbookId, recipeIndex);
-  res.send(result)
-})
-
-// Returns the modified user
-router.patch('/list/groceries', auth, async (req, res) => {
-  recipeManagerDb = await getDb();
-  const { username } = req.user;
-  const { list } = req.body;
-
-  const result = await recipeManagerDb.updateGroceryList(username, list);
-  res.send(result)
-})
-
-// Returns the modified user
-router.patch('/list/inventory', auth, async (req, res) => {
-  recipeManagerDb = await getDb();
-  const { username } = req.user;
-  const { list } = req.body;
-
-  const result = await recipeManagerDb.updateInventoryList(username, list);
-  res.send(result)
-})
-
-router.get('/test', (req, res) => res.json({ route: req.originalUrl }));
-
-var corsOptions = {
-  origin: process.env.FRONTEND_URL,
-  optionsSuccessStatus: 200,
-}
-
-app.use(cors(corsOptions));
-app.use(bodyParser.json());
-app.use(fileUpload());
-app.use(express.static('public'))
-app.use('/public', express.static('public'))
-app.use('/.netlify/functions/server', router);  // path must route to lambda
-app.use('/', router);
+});
 
 module.exports = app;
 module.exports.handler = serverless(app);
